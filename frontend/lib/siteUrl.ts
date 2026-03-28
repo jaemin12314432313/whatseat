@@ -1,0 +1,24 @@
+import type { NextRequest } from "next/server";
+
+/**
+ * 배포(Vercel)·리버스 프록시에서 공개 URL을 안정적으로 맞춤.
+ * 커스텀 도메인이면 Vercel에 `NEXT_PUBLIC_SITE_URL`을 넣는 것을 권장.
+ */
+export function getSiteUrl(request: NextRequest): string {
+  const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "");
+  if (explicit) return explicit;
+
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  if (forwardedHost) {
+    const proto = forwardedProto ?? "https";
+    return `${proto}://${forwardedHost}`;
+  }
+
+  const vercel = process.env.VERCEL_URL?.trim();
+  if (vercel) {
+    return `https://${vercel.replace(/^https?:\/\//, "")}`;
+  }
+
+  return request.nextUrl.origin;
+}
