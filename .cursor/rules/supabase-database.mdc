@@ -1,0 +1,17 @@
+---
+description: Supabase — 데이터 접근, 환경 변수, RLS, 백엔드 통일
+globs: "**/*.{ts,tsx}"
+alwaysApply: false
+---
+
+# 데이터베이스·백엔드 (Supabase)
+
+## 해야 할 것
+
+- 데이터 접근은 **Supabase 클라이언트**(또는 프로젝트의 Supabase 헬퍼)를 통해 한다.
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` 등 **환경 변수는 코드에 하드코딩하지 않는다**.
+- 클라이언트 쿼리는 **RLS(Row Level Security)** 가 전제되도록 설계한다.
+
+## 하지 말 것
+
+- **Prisma, MongoDB 직접 연결, Firebase** 등 이 문서에 없는 DB/백엔드를 새로 끌어오지 않는다. 데이터 계층은 **Supabase**로 통일한다.

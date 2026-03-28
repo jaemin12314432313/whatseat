@@ -1,0 +1,14 @@
+# Monorepo root — Next.js lives in frontend/
+
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.vercel/
+
+frontend/.env*
+!frontend/.env*.example
+
+*.log
+.DS_Store
+Thumbs.db

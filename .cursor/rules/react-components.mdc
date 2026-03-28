@@ -1,0 +1,17 @@
+---
+description: React 컴포넌트 — TSX 작성 시 구조·일관성 (AGENTS.md 기준)
+globs: "**/*.tsx"
+alwaysApply: false
+---
+
+# React 컴포넌트
+
+## 해야 할 것
+
+- UI는 **Tailwind 유틸리티**로 스타일한다. (상세는 `tailwind-styling` 규칙 참고.)
+- 기존 파일의 **import 스타일, 폴더 구조, 네이밍**에 맞춘다.
+- 요청 범위 안에서만 수정하고, 불필요한 대규모 리팩터를 하지 않는다.
+
+## 하지 말 것
+
+- 이 프로젝트 스택과 다른 스타일 방식(CSS Modules, styled-components, Emotion 등)을 **새 기능**에 도입하지 않는다.

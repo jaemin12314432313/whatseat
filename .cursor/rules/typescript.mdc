@@ -1,0 +1,16 @@
+---
+description: TypeScript — 새 코드 타입 규칙, JS-only 파일 금지
+globs: "**/*.{ts,tsx}"
+alwaysApply: false
+---
+
+# TypeScript
+
+## 해야 할 것
+
+- 새 컴포넌트·유틸·API 관련 코드는 **TypeScript**로만 작성한다.
+- `any` 남용을 피하고, 적절한 타입·`interface`·제네릭을 사용한다.
+
+## 하지 말 것
+
+- 기본적으로 **`.js` / `.jsx`만**인 새 파일을 추가하지 않는다. (레거시 마이그레이션은 별도 합의.)

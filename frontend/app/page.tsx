@@ -1,0 +1,55 @@
+import { LunchTodayScreen } from "@/components/lunch/LunchTodayScreen";
+import {
+  getMockTodayPayload,
+  type MockTodayScenario,
+} from "@/lib/lunch/mockData";
+import { loadLunchTodayPayload } from "@/lib/lunch/server/loadToday";
+import { createClient } from "@/lib/supabase/server";
+
+const SCENARIOS: MockTodayScenario[] = ["noSession", "open", "closed"];
+
+function parseScenario(raw: string | undefined): MockTodayScenario {
+  if (raw && SCENARIOS.includes(raw as MockTodayScenario)) {
+    return raw as MockTodayScenario;
+  }
+  return "noSession";
+}
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ scenario?: string; teamId?: string }>;
+}) {
+  const { scenario: scenarioParam, teamId: teamIdParam } = await searchParams;
+  const teamId =
+    teamIdParam ?? process.env.NEXT_PUBLIC_DEFAULT_TEAM_ID ?? undefined;
+
+  const supabaseReady =
+    Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
+    Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+
+  if (supabaseReady && teamId) {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (user) {
+      const live = await loadLunchTodayPayload(supabase, teamId, user.id);
+      if (live.ok) {
+        return (
+          <LunchTodayScreen
+            key={`live:${teamId}`}
+            data={live.data}
+            apiMode="live"
+          />
+        );
+      }
+    }
+  }
+
+  const scenario = parseScenario(scenarioParam);
+  const data = getMockTodayPayload(scenario);
+
+  return <LunchTodayScreen key={scenario} data={data} />;
+}
