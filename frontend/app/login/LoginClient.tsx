@@ -29,7 +29,16 @@ function textFromAuthError(err: AuthErrShape): string {
 function isEmailNotConfirmed(err: AuthErrShape): boolean {
   const code = String(err.error_code ?? err.code ?? "").toLowerCase();
   const t = textFromAuthError(err).toLowerCase();
-  return code === "email_not_confirmed" || t.includes("email not confirmed");
+  return (
+    code === "email_not_confirmed" ||
+    t.includes("email not confirmed") ||
+    t.includes("email address is not confirmed") ||
+    t.includes("signup requires email confirmation")
+  );
+}
+
+function normalizeEmail(raw: string): string {
+  return raw.trim().toLowerCase();
 }
 
 function passwordAuthMessage(err: AuthErrShape): string {
@@ -45,7 +54,10 @@ function passwordAuthMessage(err: AuthErrShape): string {
     msg.includes("invalid login") ||
     msg.includes("invalid email or password")
   ) {
-    return "이메일 또는 비밀번호가 맞지 않아요.";
+    return (
+      "이메일 또는 비밀번호가 맞지 않거나, 가입 후 이메일 인증이 아직일 수 있어요. " +
+      "메일함(스팸함)의 인증 링크를 확인해 보세요."
+    );
   }
   if (
     code === "user_already_exists" ||
@@ -90,7 +102,7 @@ export function LoginClient({ nextPath }: { nextPath: string }) {
   }, [router, nextSafe]);
 
   function validateForm(): string | null {
-    const trimmed = email.trim();
+    const trimmed = normalizeEmail(email);
     if (!trimmed || !password) return "이메일과 비밀번호를 입력해 주세요.";
     if (password.length < 6) return "비밀번호는 6자 이상이어야 해요.";
     return null;
@@ -107,7 +119,7 @@ export function LoginClient({ nextPath }: { nextPath: string }) {
       setPending(null);
       return;
     }
-    const trimmed = email.trim();
+    const trimmed = normalizeEmail(email);
     try {
       const supabase = createClient();
       const { error: err } = await supabase.auth.signInWithPassword({
@@ -116,7 +128,12 @@ export function LoginClient({ nextPath }: { nextPath: string }) {
       });
       if (err) {
         setError(passwordAuthMessage(err));
-        setShowResend(isEmailNotConfirmed(err));
+        const code = String(err.code ?? "").toLowerCase();
+        const looksWrongPassword =
+          code === "invalid_credentials" ||
+          code === "invalid_grant" ||
+          textFromAuthError(err).toLowerCase().includes("invalid login");
+        setShowResend(isEmailNotConfirmed(err) || looksWrongPassword);
         setPending(null);
         return;
       }
@@ -137,7 +154,7 @@ export function LoginClient({ nextPath }: { nextPath: string }) {
       setPending(null);
       return;
     }
-    const trimmed = email.trim();
+    const trimmed = normalizeEmail(email);
     const supabase = createClient();
     const origin = window.location.origin;
     const callback = `${origin}/auth/callback?next=${encodeURIComponent(nextSafe)}`;
@@ -156,6 +173,28 @@ export function LoginClient({ nextPath }: { nextPath: string }) {
       }
       if (data.session) {
         finishLogin();
+        return;
+      }
+
+      const user = data.user;
+      if (user && (!user.identities || user.identities.length === 0)) {
+        setError(
+          "이미 가입된 이메일이에요. 비밀번호를 입력하고 「이메일로 로그인」을 눌러 주세요.",
+        );
+        setPending(null);
+        return;
+      }
+
+      const identities = user?.identities ?? [];
+      const hasEmailIdentity =
+        identities.length > 0 &&
+        identities.some((i) => i.provider === "email");
+      if (user && hasEmailIdentity && !user.email_confirmed_at) {
+        setError(
+          "가입 메일을 보냈어요. 메일의 링크로 인증한 뒤 같은 비밀번호로 로그인해 주세요. (인증 전에는 비밀번호가 맞아도 로그인되지 않을 수 있어요.)",
+        );
+        setShowResend(true);
+        setPending(null);
         return;
       }
 
@@ -185,7 +224,7 @@ export function LoginClient({ nextPath }: { nextPath: string }) {
   }
 
   async function clickResend() {
-    const trimmed = email.trim();
+    const trimmed = normalizeEmail(email);
     if (!trimmed) {
       setError("이메일을 입력한 뒤 다시 시도해 주세요.");
       return;
