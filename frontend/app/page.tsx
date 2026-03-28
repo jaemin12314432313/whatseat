@@ -4,6 +4,10 @@ import {
   type MockTodayScenario,
 } from "@/lib/lunch/mockData";
 import { loadLunchTodayPayload } from "@/lib/lunch/server/loadToday";
+import {
+  bootstrapLunchTeamCookieIfEmpty,
+  resolveTeamIdFromRequest,
+} from "@/lib/lunch/server/resolveTeamId";
 import { createClient } from "@/lib/supabase/server";
 
 const SCENARIOS: MockTodayScenario[] = ["noSession", "open", "closed"];
@@ -21,20 +25,29 @@ export default async function Home({
   searchParams: Promise<{ scenario?: string; teamId?: string }>;
 }) {
   const { scenario: scenarioParam, teamId: teamIdParam } = await searchParams;
-  const teamId =
-    teamIdParam ?? process.env.NEXT_PUBLIC_DEFAULT_TEAM_ID ?? undefined;
 
   const supabaseReady =
     Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
     Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
-  if (supabaseReady && teamId) {
+  let teamId: string | undefined;
+
+  if (supabaseReady) {
     const supabase = await createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
     if (user) {
+      await bootstrapLunchTeamCookieIfEmpty(supabase, user.id);
+    }
+
+    teamId = await resolveTeamIdFromRequest(
+      teamIdParam,
+      process.env.NEXT_PUBLIC_DEFAULT_TEAM_ID,
+    );
+
+    if (user && teamId) {
       const live = await loadLunchTodayPayload(supabase, teamId, user.id);
       if (live.ok) {
         return (
@@ -46,6 +59,11 @@ export default async function Home({
         );
       }
     }
+  } else {
+    teamId =
+      teamIdParam?.trim() ||
+      process.env.NEXT_PUBLIC_DEFAULT_TEAM_ID?.trim() ||
+      undefined;
   }
 
   const scenario = parseScenario(scenarioParam);

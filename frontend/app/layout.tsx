@@ -30,15 +30,15 @@ export default function RootLayout({
       lang="ko"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
+      <body className="flex min-h-full flex-col bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50">
         <Suspense
           fallback={
-            <header className="h-14 border-b border-zinc-200 bg-white/80 dark:border-zinc-800 dark:bg-zinc-950/80" />
+            <header className="h-16 border-b border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900" />
           }
         >
           <AppHeader />
         </Suspense>
-        <main className="flex flex-1 flex-col">{children}</main>
+        <main className="flex flex-1 flex-col pb-10">{children}</main>
       </body>
     </html>
   );

@@ -94,6 +94,21 @@ export async function POST(
     );
   }
 
+  const { data: existingOpen } = await supabase
+    .from("lunch_sessions")
+    .select("id")
+    .eq("team_id", teamId)
+    .eq("session_date", sessionDate)
+    .eq("status", "open")
+    .maybeSingle();
+
+  if (existingOpen) {
+    return jsonError(
+      "VALIDATION_ERROR",
+      "이미 열린 세션이 있어요. 마감한 뒤 같은 날에도 새 점심 투표를 열 수 있어요.",
+    );
+  }
+
   const { data: inserted, error: insertErr } = await supabase
     .from("lunch_sessions")
     .insert({
@@ -109,7 +124,7 @@ export async function POST(
     if (isUniqueViolation(insertErr)) {
       return jsonError(
         "VALIDATION_ERROR",
-        "이미 해당 날짜에 점심 세션이 있습니다.",
+        "이미 열린 세션이 있어요. 마감한 뒤 다시 시도해 주세요.",
       );
     }
     return jsonError(

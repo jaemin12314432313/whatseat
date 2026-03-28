@@ -15,7 +15,7 @@ export function todayDateLocal(): string {
   return `${y}-${m}-${day}`;
 }
 
-/** 목업: 동일 팀·동일 날짜 세션 스냅샷 저장 키 (중복 열림 시뮬·새로고침 유지) */
+/** 목업: 팀·날짜별 현재 화면 스냅샷 (진행 중·마감 후 한 라운드 — 마감 뒤 새로 열면 덮어씀) */
 export function mockTodaySessionStorageKey(teamId: string, date: string): string {
   return `lunch-mock-today:${teamId}:${date}`;
 }
@@ -204,6 +204,62 @@ export function writeMockHistoryItemsToStorage(
     mockHistorySessionStorageKey(teamId),
     JSON.stringify(items),
   );
+}
+
+/** 목업: 이력에서 숨긴 sessionId (기본 예시 데이터·스토리지 항목 공통) */
+export function mockHistoryDeletedIdsKey(teamId: string): string {
+  return `lunch-mock-history-deleted:${teamId}`;
+}
+
+export function readMockHistoryDeletedIds(teamId: string): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.sessionStorage.getItem(mockHistoryDeletedIdsKey(teamId));
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(
+      parsed.filter((x): x is string => typeof x === "string" && x.length > 0),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function writeMockHistoryDeletedIds(
+  teamId: string,
+  ids: Set<string>,
+): void {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(
+    mockHistoryDeletedIdsKey(teamId),
+    JSON.stringify([...ids]),
+  );
+}
+
+/** 목업 이력 한 건 삭제: 스토리지에서 제거 + 숨김 집합에 추가 */
+export function removeMockHistoryItem(teamId: string, sessionId: string): void {
+  if (typeof window === "undefined") return;
+  const fromStorage = readMockHistoryItemsFromStorage(teamId);
+  const nextStorage = fromStorage.filter((i) => i.sessionId !== sessionId);
+  if (nextStorage.length !== fromStorage.length) {
+    writeMockHistoryItemsToStorage(teamId, nextStorage);
+  }
+  const deleted = readMockHistoryDeletedIds(teamId);
+  deleted.add(sessionId);
+  writeMockHistoryDeletedIds(teamId, deleted);
+}
+
+/** 기본 예시 + 스토리지 병합 후, 사용자가 삭제한 항목 제외 */
+export function getVisibleMockHistoryItemsForTeam(
+  teamId: string,
+): LunchHistoryItem[] {
+  const merged = mergeMockHistoryItems(
+    mockHistoryItems,
+    readMockHistoryItemsFromStorage(teamId),
+  );
+  const deleted = readMockHistoryDeletedIds(teamId);
+  return merged.filter((i) => !deleted.has(i.sessionId));
 }
 
 /** 기본 목업 이력 + 스토리지(마감으로 쌓인 항목) 병합, 날짜 내림차순 */

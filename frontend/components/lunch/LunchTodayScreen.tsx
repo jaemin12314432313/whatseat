@@ -65,19 +65,19 @@ function SuggestionRow({
   const rowBody = (
     <>
       <div className="min-w-0 flex-1">
-        <p className="font-medium text-zinc-900 dark:text-zinc-50">
+        <p className="font-semibold text-slate-900 dark:text-slate-50">
           {suggestion.label}
         </p>
-        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
           제안: {suggestion.suggestedByDisplayName}
         </p>
         {isMyPick ? (
-          <p className="mt-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+          <p className="mt-1 text-xs font-semibold text-blue-600 dark:text-blue-400">
             내 투표
           </p>
         ) : null}
       </div>
-      <span className="shrink-0 rounded-full bg-zinc-100 px-2.5 py-0.5 text-sm tabular-nums text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+      <span className="shrink-0 rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold tabular-nums text-blue-800 dark:bg-blue-950/60 dark:text-blue-200">
         {suggestion.voteCount}표
       </span>
     </>
@@ -86,13 +86,20 @@ function SuggestionRow({
   if (votingEnabled) {
     return (
       <li>
-        <label className="flex cursor-pointer items-start justify-between gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 transition hover:border-zinc-300 hover:bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-900/40 dark:hover:border-zinc-700 dark:hover:bg-zinc-900/70">
+        <label className="flex cursor-pointer items-start justify-between gap-4 rounded-2xl border border-slate-200/90 bg-white px-5 py-4 shadow-sm transition hover:border-blue-200 hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:hover:border-blue-800">
           <input
             type="radio"
             name={voteRadioGroup}
             checked={isMyPick}
             onChange={onVote}
-            className="mt-1 size-4 shrink-0 border-zinc-300 text-zinc-900 focus:ring-2 focus:ring-zinc-400/40 dark:border-zinc-600 dark:bg-zinc-950 dark:text-zinc-100"
+            onClick={(e) => {
+              /* 이미 고른 라디오는 onChange가 안 나옴 → 클릭에서 투표 취소 */
+              if (!votingEnabled || !isMyPick) return;
+              e.preventDefault();
+              e.stopPropagation();
+              onVote();
+            }}
+            className="mt-1 size-4 shrink-0 border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-500/30 dark:border-slate-600 dark:bg-slate-950 dark:text-blue-500"
             aria-label={`${suggestion.label}에 투표`}
           />
           {rowBody}
@@ -102,7 +109,7 @@ function SuggestionRow({
   }
 
   return (
-    <li className="flex items-start justify-between gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
+    <li className="flex items-start justify-between gap-4 rounded-2xl border border-slate-200/90 bg-white px-5 py-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
       {rowBody}
     </li>
   );
@@ -183,21 +190,14 @@ export function LunchTodayScreen({
     }
 
     const today = todayDateLocal();
-    const key = mockTodaySessionStorageKey(team.id, today);
 
-    if (session !== null) {
-      window.alert("이미 오늘 세션이 열려 있어요.");
-      return;
-    }
-
-    if (typeof window !== "undefined" && window.sessionStorage.getItem(key)) {
-      window.alert("이 팀은 오늘 이미 세션이 열려 있어요. (동일 팀·날짜 중복 불가)");
+    if (session !== null && session.status === "open") {
+      window.alert("이미 진행 중인 투표가 있어요. 마감한 뒤 새 세션을 열 수 있어요.");
       return;
     }
 
     setPayload((prev) => {
-      if (prev.session !== null) return prev;
-      if (typeof window !== "undefined" && window.sessionStorage.getItem(key)) {
+      if (prev.session !== null && prev.session.status === "open") {
         return prev;
       }
       const newSession = createMockOpenLunchSession(
@@ -291,14 +291,19 @@ export function LunchTodayScreen({
       if (session === null || session.status !== "open") return;
 
       if (apiMode === "live") {
-        if (myVote?.suggestionId === suggestionId) return;
         setBusy(true);
         try {
-          const res = await fetch(`/api/lunch/sessions/${session.id}/my-vote`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ suggestionId }),
-          });
+          const clearing = myVote?.suggestionId === suggestionId;
+          const res = await fetch(
+            `/api/lunch/sessions/${session.id}/my-vote`,
+            clearing
+              ? { method: "DELETE" }
+              : {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ suggestionId }),
+                },
+          );
           if (!res.ok) {
             window.alert(await readApiError(res));
             return;
@@ -314,7 +319,20 @@ export function LunchTodayScreen({
       setPayload((prev) => {
         if (prev.session === null || prev.session.status !== "open") return prev;
         const prevVoteId = prev.myVote?.suggestionId;
-        if (prevVoteId === suggestionId) return prev;
+        if (prevVoteId === suggestionId) {
+          const nextSuggestions = prev.suggestions.map((s) =>
+            s.id === suggestionId
+              ? { ...s, voteCount: Math.max(0, s.voteCount - 1) }
+              : s,
+          );
+          const next: LunchTodayPayload = {
+            ...prev,
+            suggestions: nextSuggestions,
+            myVote: null,
+          };
+          persistMockTodayPayload(prev.team.id, prev.session.date, next);
+          return next;
+        }
 
         const nextSuggestions = prev.suggestions.map((s) => {
           let nextCount = s.voteCount;
@@ -401,55 +419,58 @@ export function LunchTodayScreen({
     session !== null ? `lunch-vote-${session.id}` : "lunch-vote";
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6">
-      <div className="mb-8">
-        <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+    <div className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-8">
+      <div className="mb-10">
+        <p className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">
           팀
         </p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">
           {team.name}
         </h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
           오늘 점심 메뉴를 함께 정해요.
         </p>
       </div>
 
       {session === null ? (
         <section
-          className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50/80 p-6 dark:border-zinc-700 dark:bg-zinc-900/30"
+          className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 shadow-sm dark:border-slate-700 dark:bg-slate-900"
           aria-labelledby="no-session-heading"
         >
           <h2
             id="no-session-heading"
-            className="text-lg font-semibold text-zinc-900 dark:text-zinc-50"
+            className="text-lg font-semibold text-slate-900 dark:text-slate-50"
           >
             오늘 세션이 아직 없어요
           </h2>
-          <p className="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+          <p className="mt-3 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
             팀원이 메뉴를 제안하고 투표하려면 먼저 오늘의 점심 세션을 열어야 해요.
             세션을 열면 후보 목록과 마감 시각을 정할 수 있어요.
           </p>
-          <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
-            <span className="font-medium text-zinc-800 dark:text-zinc-200">
-              새로운 점심 투표
+          <p className="mt-4 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+            <span className="font-semibold text-slate-800 dark:text-slate-200">
+              마감한 뒤에도 같은 날
+            </span>{" "}
+            아래에서 새 라운드를 계속 열 수 있어요.{" "}
+            <span className="font-semibold text-slate-800 dark:text-slate-200">
+              동시에 진행 중인 투표는 하나
             </span>
-            는 날짜가 바뀐 뒤(보통 내일) 이 화면에서 다시 「오늘 세션 열기」를 눌러
-            시작할 수 있어요. 하루에 같은 팀·같은 날 세션은 한 번만 열 수 있어요.
+            (열린 세션 하나)만 두는 방식이에요.
           </p>
-          <p className="mt-2 text-sm">
+          <p className="mt-4 text-sm">
             <Link
               href={`/history?teamId=${encodeURIComponent(team.id)}`}
-              className="font-medium text-zinc-900 underline decoration-zinc-400 underline-offset-2 hover:text-zinc-700 dark:text-zinc-100 dark:decoration-zinc-600"
+              className="font-medium text-blue-600 underline decoration-blue-300 underline-offset-2 hover:text-blue-700 dark:text-blue-400 dark:decoration-blue-700 dark:hover:text-blue-300"
             >
               지난 확정 이력·그날 후보 보기
             </Link>
           </p>
-          <div className="mt-6">
+          <div className="mt-8">
             <button
               type="button"
               onClick={handleOpenSession}
               disabled={busy}
-              className="inline-flex items-center justify-center rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+              className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60 dark:bg-blue-600 dark:hover:bg-blue-500"
             >
               오늘 세션 열기
             </button>
@@ -459,31 +480,31 @@ export function LunchTodayScreen({
 
       {session !== null && session.status === "closed" && result ? (
         <section
-          className="mb-8 rounded-xl border border-emerald-200 bg-emerald-50/90 p-6 shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/40"
+          className="mb-8 rounded-2xl border border-emerald-100 bg-gradient-to-br from-white to-emerald-50/80 p-8 shadow-sm dark:border-emerald-900/40 dark:from-slate-900 dark:to-emerald-950/30"
           aria-labelledby="result-heading"
         >
-          <p className="text-xs font-medium uppercase tracking-wide text-emerald-800 dark:text-emerald-300">
+          <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
             오늘의 메뉴
           </p>
           <h2
             id="result-heading"
-            className="mt-2 text-xl font-semibold text-emerald-950 dark:text-emerald-50"
+            className="mt-3 text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-50"
           >
             {result.winningLabels.length > 0
               ? result.winningLabels.join(", ")
               : "미정"}
           </h2>
           {result.note ? (
-            <p className="mt-2 text-sm text-emerald-900/85 dark:text-emerald-200/90">
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
               {result.note}
             </p>
           ) : null}
           {result.isTie && result.winningLabels.length > 1 ? (
-            <p className="mt-2 text-sm text-emerald-900/80 dark:text-emerald-200/90">
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
               동점으로 공동 1위예요.
             </p>
           ) : null}
-          <p className="mt-3 text-xs text-emerald-800/70 dark:text-emerald-400/80">
+          <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">
             마감: {formatClosesAt(result.closedAt)}
           </p>
         </section>
@@ -491,25 +512,35 @@ export function LunchTodayScreen({
 
       {session !== null && session.status === "closed" ? (
         <section
-          className="mb-6 rounded-xl border border-sky-200 bg-sky-50/90 p-4 dark:border-sky-900/50 dark:bg-sky-950/35"
+          className="mb-8 rounded-2xl border border-blue-100 bg-blue-50/60 p-6 shadow-sm dark:border-blue-900/40 dark:bg-blue-950/25"
           aria-labelledby="next-vote-heading"
         >
           <h2
             id="next-vote-heading"
-            className="text-sm font-semibold text-sky-950 dark:text-sky-100"
+            className="text-sm font-semibold text-slate-900 dark:text-slate-100"
           >
             다음 점심 투표는 어떻게 열어요?
           </h2>
-          <p className="mt-2 text-sm leading-relaxed text-sky-900/90 dark:text-sky-200/95">
-            오늘 세션은 이미 마감됐어요.{" "}
-            <strong className="font-semibold">날짜가 바뀐 뒤</strong>(보통 내일)
-            이 페이지로 돌아와 「오늘 세션 열기」를 누르면 새로운 투표를 시작할 수
-            있어요.
-          </p>
-          <p className="mt-3 text-sm">
+          <>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+              이 라운드는 마감됐어요. 같은 날에도 새 투표를 이어서 열려면 아래 버튼을
+              눌러 주세요.
+            </p>
+            <div className="mt-5">
+              <button
+                type="button"
+                onClick={handleOpenSession}
+                disabled={busy}
+                className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60 dark:bg-blue-600 dark:hover:bg-blue-500"
+              >
+                새 점심 세션 열기
+              </button>
+            </div>
+          </>
+          <p className="mt-4 text-sm">
             <Link
               href={`/history?teamId=${encodeURIComponent(team.id)}`}
-              className="font-medium text-sky-950 underline decoration-sky-400 underline-offset-2 dark:text-sky-100 dark:decoration-sky-700"
+              className="font-medium text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-800 dark:text-blue-400 dark:decoration-blue-600 dark:hover:text-blue-300"
             >
               이력에서 그날 후보·득표 보기
             </Link>
@@ -519,52 +550,52 @@ export function LunchTodayScreen({
 
       {session !== null ? (
         <section aria-labelledby="session-heading">
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+          <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2
                 id="session-heading"
-                className="text-base font-semibold text-zinc-900 dark:text-zinc-50"
+                className="text-lg font-semibold text-slate-900 dark:text-slate-50"
               >
                 후보 목록
               </h2>
-              <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                 날짜 {session.date}
                 {session.status === "open" ? " · 투표 진행 중" : " · 마감됨"}
               </p>
             </div>
             {session.status === "open" ? (
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
                   마감 예정 {formatClosesAt(session.closesAt)}
                 </p>
                 <button
                   type="button"
                   onClick={handleCloseSession}
                   disabled={busy}
-                  className="inline-flex shrink-0 items-center justify-center rounded-lg border border-amber-800/40 bg-white px-3 py-1.5 text-sm font-medium text-amber-900 shadow-sm transition hover:bg-amber-50 disabled:opacity-60 dark:border-amber-500/40 dark:bg-zinc-900 dark:text-amber-200 dark:hover:bg-zinc-800"
+                  className="inline-flex shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                 >
                   마감
                 </button>
               </div>
             ) : (
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
                 마감 시각 {formatClosesAt(session.closesAt)}
               </p>
             )}
           </div>
 
           {session.status === "open" ? (
-            <div className="mb-4 rounded-lg border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-900/50">
+            <div className="mb-6 rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
               <label
                 htmlFor="menu-suggest-input"
-                className="text-sm font-medium text-zinc-800 dark:text-zinc-200"
+                className="text-sm font-semibold text-slate-800 dark:text-slate-200"
               >
                 메뉴 제안
               </label>
-              <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                 같은 이름(띄어쓰기만 다른 경우 포함)은 한 후보로 합쳐져요.
               </p>
-              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <input
                   id="menu-suggest-input"
                   type="text"
@@ -579,13 +610,13 @@ export function LunchTodayScreen({
                   placeholder="예: 마라탕"
                   maxLength={80}
                   disabled={busy}
-                  className="min-h-10 w-full flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-400/30 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500"
+                  className="min-h-10 w-full flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-50 dark:focus:border-blue-400"
                 />
                 <button
                   type="button"
                   onClick={handleAddSuggestion}
                   disabled={busy}
-                  className="inline-flex shrink-0 items-center justify-center rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+                  className="inline-flex shrink-0 items-center justify-center rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60 dark:bg-blue-600 dark:hover:bg-blue-500"
                 >
                   추가
                 </button>
@@ -595,29 +626,29 @@ export function LunchTodayScreen({
 
           {session.status === "open" ? (
             <section
-              className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/40"
+              className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900"
               aria-labelledby="vote-region-label"
             >
               <h3
                 id="vote-region-label"
-                className="text-sm font-semibold text-zinc-900 dark:text-zinc-50"
+                className="text-sm font-semibold text-slate-900 dark:text-slate-50"
               >
                 투표
               </h3>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                1인 1표 · 마감 전까지 변경 가능
+              <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                1인 1표 · 마감 전까지 변경 가능 · 투표 취소 버튼 또는 고른 줄의 라디오를 다시 누르기
                 {suggestions.length > 0
                   ? " · 아래 후보 중 하나를 선택하세요"
                   : " · 후보를 추가하면 여기서 선택할 수 있어요"}
               </p>
 
               {suggestions.length === 0 ? (
-                <p className="mt-4 rounded-lg border border-dashed border-zinc-300 bg-zinc-50/80 px-4 py-6 text-center text-sm text-zinc-600 dark:border-zinc-600 dark:bg-zinc-950/40 dark:text-zinc-400">
+                <p className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-center text-sm text-slate-500 dark:border-slate-600 dark:bg-slate-800/50 dark:text-slate-400">
                   아직 후보가 없어요. 위쪽 &quot;메뉴 제안&quot;에서 후보를 추가하면 여기서
                   투표할 수 있어요.
                 </p>
               ) : (
-                <ul className="mt-4 space-y-2">
+                <ul className="mt-6 space-y-3">
                   {suggestions.map((s) => (
                     <SuggestionRow
                       key={s.id}
@@ -631,20 +662,33 @@ export function LunchTodayScreen({
                 </ul>
               )}
 
+              {myVote ? (
+                <div className="mt-6">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => handleSelectVote(myVote.suggestionId)}
+                    className="text-sm font-medium text-blue-600 underline decoration-blue-300 underline-offset-2 hover:text-blue-700 disabled:opacity-50 dark:text-blue-400 dark:decoration-blue-600 dark:hover:text-blue-300"
+                  >
+                    투표 취소
+                  </button>
+                </div>
+              ) : null}
+
               {suggestions.length > 0 ? (
-                <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
+                <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
                   {myVote
-                    ? "다른 후보를 선택하면 투표가 바뀌어요."
+                    ? "다른 후보를 고르면 투표가 바뀌어요. 위의 ‘투표 취소’나, 고른 줄의 라디오를 다시 눌러도 취소할 수 있어요."
                     : "후보를 한 가지 선택하면 투표가 반영돼요."}
                 </p>
               ) : null}
             </section>
           ) : suggestions.length === 0 ? (
-            <p className="rounded-lg border border-zinc-200 bg-white px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-400">
+            <p className="rounded-2xl border border-slate-200/80 bg-white px-6 py-10 text-center text-sm text-slate-500 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
               아직 제안된 메뉴가 없어요.
             </p>
           ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-3">
               {suggestions.map((s) => (
                 <SuggestionRow
                   key={s.id}
@@ -659,7 +703,7 @@ export function LunchTodayScreen({
           )}
 
           {session.status === "closed" ? (
-            <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">
+            <p className="mt-6 text-sm text-slate-500 dark:text-slate-400">
               이미 마감된 세션이라 새 제안이나 투표는 할 수 없습니다.
             </p>
           ) : null}

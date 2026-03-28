@@ -71,3 +71,14 @@ export interface LunchHistoryItem {
 export interface LunchHistoryPayload {
   items: LunchHistoryItem[];
 }
+
+/** GET /api/me/vote-history — 본인 투표 기록 */
+export interface MyVoteHistoryItem {
+  votedAt: string;
+  teamId: string;
+  teamName: string;
+  sessionId: string;
+  sessionDate: string;
+  sessionStatus: LunchSessionStatus;
+  menuLabel: string;
+}

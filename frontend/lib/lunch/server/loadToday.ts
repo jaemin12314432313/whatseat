@@ -97,12 +97,31 @@ export async function loadLunchTodayPayload(
 
   const today = seoulDateString();
 
-  const { data: sessionRow } = await supabase
+  const sessionSelect =
+    "id, team_id, session_date, status, closes_at, created_at";
+
+  const { data: openRow } = await supabase
     .from("lunch_sessions")
-    .select("id, team_id, session_date, status, closes_at")
+    .select(sessionSelect)
     .eq("team_id", teamId)
     .eq("session_date", today)
+    .eq("status", "open")
     .maybeSingle();
+
+  let sessionRow = openRow;
+
+  if (!sessionRow) {
+    const { data: closedRow } = await supabase
+      .from("lunch_sessions")
+      .select(sessionSelect)
+      .eq("team_id", teamId)
+      .eq("session_date", today)
+      .eq("status", "closed")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    sessionRow = closedRow;
+  }
 
   if (!sessionRow) {
     return {

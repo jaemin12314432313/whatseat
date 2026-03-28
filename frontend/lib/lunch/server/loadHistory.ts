@@ -140,7 +140,7 @@ export async function loadLunchHistoryItems(
     )
     .eq("team_id", teamId)
     .eq("status", "closed")
-    .order("session_date", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(limit);
 
   if (error) {
